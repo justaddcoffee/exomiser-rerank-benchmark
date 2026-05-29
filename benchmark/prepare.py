@@ -1,35 +1,67 @@
-"""Build the case set: fetch phenopackets, extract ground truth, strip the diagnosis.
+"""Select cases from the Phenopacket Store bundle, strip diagnoses, write ground truth.
 
-Source: Monarch Phenopacket Store (github.com/monarch-initiative/phenopacket-store) — real
-GA4GH phenopackets with a curated diagnosis (causal gene + OMIM disease).
+Produces:
+  sanitized/<case_id>.json  -- phenopacket with the diagnosis removed (fed to OS)
+  ground_truth.csv          -- case_id, ppkt_id, gene_symbol, gene_hgnc, omim_disease, n_hpo
 
-For each selected case this produces:
-  - sanitized/<id>.json : phenopacket with ONLY id + subject + phenotypicFeatures + metaData
-                          (the interpretations/diagnosis block is removed so the LLM can't
-                          read the answer; Exomiser only needs the HPO terms anyway).
-  - ground_truth.csv    : id, gene_symbol, gene_entrez, gene_ensembl, gene_hgnc, omim_disease
-
-Selection favors single-gene Mendelian cases; the pilot takes N=10 (diverse genes).
-
-TODO(impl):
-  - fetch_phenopackets(n): pull N phenopackets (raw JSON from the store).
-  - extract_truth(ppkt): pull (HPO ids, causal gene with stable IDs, OMIM disease) from
-    interpretations -> diagnosis -> genomicInterpretations -> variationDescriptor/geneContext.
-  - sanitize(ppkt): drop interpretations/diagnosis; keep id/subject/phenotypicFeatures/metaData.
+Run `download.sh` (or fetch the release zip into data/ppkts/) first.
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import json
+import random
+
+from . import config, phenopackets
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--n", type=int, default=10, help="number of phenopackets (pilot=10)")
-    parser.add_argument("--out", default="sanitized", help="output dir for stripped phenopackets")
-    args = parser.parse_args()
-    raise NotImplementedError(
-        f"prepare: fetch {args.n} phenopackets -> strip diagnosis -> {args.out}/ + ground_truth.csv"
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--n", type=int, default=10, help="number of cases (pilot=10)")
+    ap.add_argument(
+        "--min-hpo", type=int, default=4, help="minimum non-excluded HPO terms"
+    )
+    ap.add_argument("--seed", type=int, default=0, help="sampling seed (reproducible)")
+    args = ap.parse_args()
+
+    if not config.PPKTS.exists():
+        raise SystemExit(
+            f"{config.PPKTS} not found — download the Phenopacket Store bundle first."
+        )
+
+    cases = phenopackets.load_cases(min_hpo=args.min_hpo)
+    if not cases:
+        raise SystemExit("no eligible cases found")
+    random.Random(args.seed).shuffle(cases)
+    chosen = cases[: args.n]
+
+    config.SANITIZED.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for c in chosen:
+        (config.SANITIZED / f"{c.case_id}.json").write_text(
+            json.dumps(phenopackets.sanitize(c.path), indent=2)
+        )
+        rows.append(
+            {
+                "case_id": c.case_id,
+                "ppkt_id": c.ppkt_id,
+                "gene_symbol": c.gene_symbol,
+                "gene_hgnc": c.gene_hgnc,
+                "omim_disease": c.omim_disease or "",
+                "n_hpo": len(c.hpo_ids),
+            }
+        )
+
+    with config.GROUND_TRUTH.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(
+        f"prepared {len(rows)} cases (of {len(cases)} eligible) "
+        f"-> {config.SANITIZED}/ + {config.GROUND_TRUTH.name}"
     )
 
 

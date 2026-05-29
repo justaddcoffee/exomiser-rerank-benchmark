@@ -1,23 +1,21 @@
-"""Submit each sanitized phenopacket to OpenScientist and collect the two rankings.
+"""Submit each sanitized phenopacket to OpenScientist and collect both rankings.
 
-Client of the OS REST API (OS_API_URL / OS_API_KEY from .env). Per case:
-  1. POST /api/v1/jobs  (multipart: research_question=PROMPT, data_files=<sanitized phenopacket>,
-     max_iterations=2)
-  2. poll GET /api/v1/jobs/{id}/status until completed/failed
-  3. retrieve the job's `exomiser_ranking.json` (baseline) and the reranked gene list, save to
-     results/<id>/.
+Per case: POST a discovery job (phenopacket + PROMPT, phenotype-only Exomiser + rerank),
+wait for completion, then copy `exomiser_ranking.json` (baseline) and `reranked.json`
+(agent rerank) out of the OS job dir into results/<case_id>/.
 
-Concurrency capped at OS_MAX_INFLIGHT. The prompt below defines the rerank output schema
-explicitly, since OS treats reranking as opt-in and does not mandate a format.
-
-TODO(impl):
-  - submit(client, ppkt_path) -> job_id
-  - poll(client, job_id) -> status
-  - collect(job_id) -> {"exomiser_ranking": ..., "reranked": ...}  (how to fetch artifacts —
-    API endpoint vs job-dir on disk — depends on where OS runs; local pilot can read the job dir).
+Collection reads OS_JOBS_DIR (local OS instance). Jobs are processed sequentially — fine
+for the 10-case pilot; parallelize up to OS_MAX_INFLIGHT for the full run.
 """
 
 from __future__ import annotations
+
+import argparse
+import csv
+import json
+import shutil
+
+from . import config, osclient
 
 PROMPT = """\
 Attached is a patient phenopacket containing HPO phenotype terms (no diagnosis).
@@ -35,8 +33,55 @@ Attached is a patient phenopacket containing HPO phenotype terms (no diagnosis).
 """
 
 
+def _collect(job_id: str, case_id: str) -> dict:
+    """Copy the baseline + rerank rankings from the OS job dir into results/<case_id>/."""
+    out = config.RESULTS / case_id
+    out.mkdir(parents=True, exist_ok=True)
+    found: dict[str, bool] = {}
+    if config.OS_JOBS_DIR is None:
+        out.joinpath("meta.json").write_text(
+            json.dumps({"job_id": job_id, "error": "OS_JOBS_DIR unset"})
+        )
+        return found
+    jd = config.OS_JOBS_DIR / job_id
+    # exomiser_ranking.json lives under data/exomiser_results/<hex>/; reranked.json wherever
+    # the agent wrote it — search broadly to be robust.
+    for name in ("exomiser_ranking.json", "reranked.json"):
+        hits = sorted(jd.rglob(name))
+        if hits:
+            shutil.copy(hits[-1], out / name)
+            found[name] = True
+    out.joinpath("meta.json").write_text(
+        json.dumps({"job_id": job_id, "found": found}, indent=2)
+    )
+    return found
+
+
 def main() -> None:
-    raise NotImplementedError("run: submit sanitized phenopackets via the OS API + collect rankings")
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--max-iterations", type=int, default=2)
+    args = ap.parse_args()
+
+    if not config.GROUND_TRUTH.exists():
+        raise SystemExit(
+            "ground_truth.csv not found — run `python -m benchmark.prepare` first."
+        )
+    cases = list(csv.DictReader(config.GROUND_TRUTH.open()))
+    http = osclient.client()
+
+    for i, c in enumerate(cases, 1):
+        cid = c["case_id"]
+        ppkt = config.SANITIZED / f"{cid}.json"
+        job_id = osclient.create_job(
+            http,
+            research_question=PROMPT,
+            phenopacket_path=ppkt,
+            max_iterations=args.max_iterations,
+        )
+        print(f"[{i}/{len(cases)}] {cid}: submitted job {job_id}", flush=True)
+        status = osclient.wait_for(http, job_id)
+        found = _collect(job_id, cid)
+        print(f"            -> {status}; collected {sorted(found)}", flush=True)
 
 
 if __name__ == "__main__":

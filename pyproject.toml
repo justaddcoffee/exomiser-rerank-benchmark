@@ -5,16 +5,14 @@ description = "Does OpenScientist's evidence-based reranking improve on Exomiser
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "httpx>=0.27",        # OS REST API client + fetching phenopackets
-    "pyyaml>=6",          # phenopacket / output parsing (YAML or JSON)
-    "pandas>=2",          # results tables / per-case CSV
-    "statsmodels>=0.14",  # McNemar's test for paired hits@k
-    "python-dotenv>=1",   # load .env (OS_API_URL / OS_API_KEY)
+    "httpx>=0.27",        # OS REST API client
+    "python-dotenv>=1",   # load .env (OS_API_URL / OS_API_KEY / OS_JOBS_DIR)
+    "statsmodels>=0.14",  # McNemar's exact test for paired hits@k (pulls numpy/scipy)
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.6", "pytest>=8"]
+dev = ["ruff>=0.6"]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# Run-as-`python -m benchmark.X` script project: manage the venv/deps, don't build a wheel.
+[tool.uv]
+package = false
