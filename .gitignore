@@ -1,0 +1,24 @@
+# Secrets — NEVER commit (public repo)
+.env
+*.key
+*secret*
+*credentials*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Benchmark working data + outputs (can be large / regenerated)
+data/
+sanitized/
+results/
+*.parquet
+*.jsonl
+
+# OS
+.DS_Store
