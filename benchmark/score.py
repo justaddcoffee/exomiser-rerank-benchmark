@@ -9,6 +9,7 @@ Outputs a table to stdout and results/scores.csv.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 
@@ -23,8 +24,8 @@ def _norm(s: object) -> str:
     return str(s or "").strip().upper()
 
 
-def _load_ranking(case_id: str, name: str) -> list[dict] | None:
-    p = config.RESULTS / case_id / name
+def _load_ranking(results: object, case_id: str, name: str) -> list[dict] | None:
+    p = results / case_id / name
     if not p.exists():
         return None
     data = json.loads(p.read_text())
@@ -46,15 +47,25 @@ def _rank_of(true_symbol: str, ranking: list[dict] | None) -> int | None:
 
 
 def main() -> None:
-    if not config.GROUND_TRUTH.exists():
-        raise SystemExit("ground_truth.csv not found")
-    cases = list(csv.DictReader(config.GROUND_TRUTH.open()))
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--corpus",
+        choices=sorted(config.CORPORA),
+        default="store",
+        help="which corpus's collected results to score",
+    )
+    args = ap.parse_args()
+    cp = config.corpus(args.corpus)
+
+    if not cp.ground_truth.exists():
+        raise SystemExit(f"{cp.ground_truth.name} not found")
+    cases = list(csv.DictReader(cp.ground_truth.open()))
 
     per_case = []
     for c in cases:
         cid, sym = c["case_id"], c["gene_symbol"]
-        br = _rank_of(sym, _load_ranking(cid, "exomiser_ranking.json"))
-        rr = _rank_of(sym, _load_ranking(cid, "reranked.json"))
+        br = _rank_of(sym, _load_ranking(cp.results, cid, "exomiser_ranking.json"))
+        rr = _rank_of(sym, _load_ranking(cp.results, cid, "reranked.json"))
         per_case.append(
             {
                 "case_id": cid,
@@ -103,8 +114,8 @@ def main() -> None:
         f"reranking moved true gene UP in {moved}, DOWN in {hurt}, else unchanged/absent\n"
     )
 
-    out = config.RESULTS / "scores.csv"
-    config.RESULTS.mkdir(parents=True, exist_ok=True)
+    out = cp.results / "scores.csv"
+    cp.results.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(per_case[0].keys()))
         writer.writeheader()

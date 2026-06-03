@@ -49,8 +49,23 @@ Output:
 - `results/<case_id>/{exomiser_ranking.json,reranked.json,meta.json}` — per-case artifacts collected from the OS job dir.
 - `results/scores.csv` — per-case true-gene ranks in baseline vs reranked.
 
+## Pilot 2 — 20 synthetic cases (prepared, not yet run)
+
+To kill the source-paper shortcut at its root (caveat #3), pilot 2 swaps real case reports for
+**synthetic patients** generated with [`phenotype2phenopacket`](https://github.com/monarch-initiative/phenotype2phenopacket)
+(`benchmark/synthesize.py`). Each patient's HPO profile is a frequency-weighted draw from the
+**HPOA aggregate** annotations for an OMIM disease — there is no single publication behind it,
+so `search_pubmed` cannot retrieve "the paper the curator used." The causal gene is attached
+from HPO's `genes_to_disease`. Disease selection matches the pilot tier (same Phenopacket-Store
+single-gene disease universe); the 10 pilot diseases are always included so 10 of the 20 cases
+are a direct A/B against pilot 1. Sanitization is unchanged, and `prepare.py` now also refuses
+any sanitized file in which the OMIM id survives. The 20 cases are generated + prepared
+(`ground_truth_synthetic.csv`, n_hpo 4–109); the OS run + score is the remaining step. Run with
+`--corpus synthetic` (see README).
+
 ## What's next
 
+- **Run pilot 2** (`--corpus synthetic`) and compare against pilot 1 on the 10 shared diseases.
 - **~100-case run** with source-PMID retrieval blocked, balanced across difficulty tiers.
 - Per-case **headroom check** — for the cases where the baseline already nails it, does reranking ever *hurt*? (Pilot says no — 0/10 went down — but n is small.)
 - **Evidence quality** as a separate axis: even when reranking lands the right gene, is the cited evidence load-bearing for the decision, or does the rationale stand without it? Hook for [openscientist-io/openscientist#191](https://github.com/openscientist-io/openscientist/pull/191) (the citation-validation work).

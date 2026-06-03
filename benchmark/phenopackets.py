@@ -41,7 +41,12 @@ def _hpo_ids(ppkt: dict) -> list[str]:
 
 
 def _causal_genes(ppkt: dict) -> dict[str, str]:
-    """Unique {symbol: hgnc_id} across all genomic interpretations."""
+    """Unique {symbol: hgnc_id} across all genomic interpretations.
+
+    Handles both layouts seen in our two corpora: Phenopacket Store nests the gene
+    under ``variantInterpretation.variationDescriptor.geneContext``; the synthetic
+    phenopackets from ``p2p add-genes`` attach a bare ``gene`` GeneDescriptor.
+    """
     genes: dict[str, str] = {}
     for interp in ppkt.get("interpretations", []) or []:
         for gi in (interp.get("diagnosis") or {}).get(
@@ -49,7 +54,7 @@ def _causal_genes(ppkt: dict) -> dict[str, str]:
         ) or []:
             gc = (
                 (gi.get("variantInterpretation") or {}).get("variationDescriptor") or {}
-            ).get("geneContext") or {}
+            ).get("geneContext") or gi.get("gene") or {}
             sym = gc.get("symbol")
             if sym:
                 genes.setdefault(sym, gc.get("valueId") or "")
@@ -64,10 +69,16 @@ def _omim_disease(ppkt: dict) -> str | None:
     return None
 
 
-def load_cases(min_hpo: int = 4) -> list[Case]:
-    """Eligible cases: exactly one causal gene and >= min_hpo (non-excluded) HPO terms."""
+def load_cases(min_hpo: int = 4, ppkts_dir: Path | None = None, flat: bool = False) -> list[Case]:
+    """Eligible cases: exactly one causal gene and >= min_hpo (non-excluded) HPO terms.
+
+    ``ppkts_dir`` defaults to the Phenopacket Store bundle. ``flat`` controls the
+    case id: the Store nests files under a ``<GENE>/`` dir (id ``<GENE>__<stem>``);
+    synthesize writes one flat dir, so we key the id on the gene symbol instead.
+    """
+    root = ppkts_dir or config.PPKTS
     cases: list[Case] = []
-    for f in sorted(config.PPKTS.rglob("*.json")):
+    for f in sorted(root.rglob("*.json")):
         try:
             ppkt = json.loads(f.read_text())
         except (OSError, json.JSONDecodeError):
@@ -77,9 +88,10 @@ def load_cases(min_hpo: int = 4) -> list[Case]:
         if len(genes) != 1 or len(hpo) < min_hpo:
             continue
         sym, hgnc = next(iter(genes.items()))
+        case_id = f"{sym}__{f.stem}" if flat else f"{f.parent.name}__{f.stem}"
         cases.append(
             Case(
-                case_id=f"{f.parent.name}__{f.stem}",
+                case_id=case_id,
                 ppkt_id=ppkt.get("id", f.stem),
                 path=f,
                 hpo_ids=hpo,
