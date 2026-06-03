@@ -13,8 +13,32 @@ import argparse
 import csv
 import json
 import random
+import re
 
 from . import config, phenopackets
+
+
+def _check_no_leakage(sanitized: dict, case: phenopackets.Case) -> None:
+    """Refuse to write a sanitized phenopacket in which the answer survives.
+
+    Catches both the obvious case (gene symbol appearing anywhere) and the subtle
+    one that broke the first pilot (the source PMID present so the agent can fetch
+    the paper). Word-boundary matching on the gene symbol avoids false positives
+    on substrings inside HPO labels.
+    """
+    text = json.dumps(sanitized)
+    leaks: list[str] = []
+    if case.gene_symbol and re.search(rf"\b{re.escape(case.gene_symbol)}\b", text):
+        leaks.append(f"gene_symbol='{case.gene_symbol}'")
+    if case.ppkt_id.startswith("PMID_"):
+        parts = case.ppkt_id.split("_")
+        if len(parts) >= 2 and parts[1].isdigit() and parts[1] in text:
+            leaks.append(f"PMID='{parts[1]}'")
+    if leaks:
+        raise SystemExit(
+            f"LEAKAGE in sanitized phenopacket for case '{case.case_id}': "
+            f"{', '.join(leaks)}. Strengthen phenopackets.sanitize() before running."
+        )
 
 
 def main() -> None:
@@ -40,8 +64,10 @@ def main() -> None:
     config.SANITIZED.mkdir(parents=True, exist_ok=True)
     rows = []
     for c in chosen:
+        sanitized = phenopackets.sanitize(c.path)
+        _check_no_leakage(sanitized, c)
         (config.SANITIZED / f"{c.case_id}.json").write_text(
-            json.dumps(phenopackets.sanitize(c.path), indent=2)
+            json.dumps(sanitized, indent=2)
         )
         rows.append(
             {

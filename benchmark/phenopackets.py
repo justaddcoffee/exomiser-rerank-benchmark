@@ -10,6 +10,7 @@ Structure (validated against release 0.1.26):
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,11 +92,43 @@ def load_cases(min_hpo: int = 4) -> list[Case]:
 
 
 def sanitize(ppkt_path: Path) -> dict:
-    """Return the phenopacket with ONLY id/subject/phenotypicFeatures/metaData — the
-    interpretations/diseases (the answer) are dropped so the agent can't read it."""
+    """Return the phenopacket scrubbed of every identifying provenance field so the
+    agent cannot look up the answer.
+
+    A 10-case pilot (2026-05-29) hit 100% hits@1 because the agent fetched the
+    source paper via PubMed — the leakage was hiding in `id` (carries the source
+    PMID), `subject.id` (paper-specific patient label), and `metaData` (especially
+    `externalReferences`, which carry the source paper, plus other fields that
+    sometimes carry the gene symbol). Only what Exomiser needs to parse and run is
+    preserved:
+
+      - a stable but non-identifying `id` (sha256 of the filename, truncated)
+      - subject demographics with a generic id (no paper-derived label)
+      - phenotypicFeatures (HPO terms — the actual signal)
+      - metaData reduced to `phenopacketSchemaVersion` + `resources`
+        (ontology version stubs Exomiser needs; everything else dropped)
+
+    `benchmark/prepare.py` re-verifies — refusing to write any sanitized file in
+    which the gene symbol or source PMID survives — so silent regression is
+    impossible.
+    """
     ppkt = json.loads(ppkt_path.read_text())
-    return {
-        k: ppkt[k]
-        for k in ("id", "subject", "phenotypicFeatures", "metaData")
-        if k in ppkt
-    }
+    case_hash = hashlib.sha256(ppkt_path.name.encode()).hexdigest()[:12]
+    out: dict = {"id": f"case_{case_hash}"}
+
+    if "subject" in ppkt:
+        sub = {k: v for k, v in ppkt["subject"].items() if k != "id"}
+        sub["id"] = f"subject_{case_hash}"
+        out["subject"] = sub
+
+    if "phenotypicFeatures" in ppkt:
+        out["phenotypicFeatures"] = ppkt["phenotypicFeatures"]
+
+    md = ppkt.get("metaData") or {}
+    clean_md: dict = {}
+    for k in ("phenopacketSchemaVersion", "resources"):
+        if k in md:
+            clean_md[k] = md[k]
+    out["metaData"] = clean_md
+
+    return out
