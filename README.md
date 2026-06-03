@@ -9,8 +9,6 @@ it submits phenopackets as discovery jobs, then compares two rankings per case:
 - **A — baseline:** Exomiser's `exomiser_ranking.json` (deterministic, tool-emitted).
 - **B — reranked:** the agent's evidence-based reranking (PubMed / ClinVar / OMIM / db skills).
 
-It does **not** import any OpenScientist code; it only talks to the HTTP API.
-
 ## Question & metric
 
 > For a patient's HPO phenotypes, does reranking move the **true causal gene** higher than
