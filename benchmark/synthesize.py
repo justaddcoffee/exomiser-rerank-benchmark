@@ -301,7 +301,7 @@ def main() -> None:
         "--hard",
         action="store_true",
         help="preset: rare/recent + sparse + noisy → synthetic_hard "
-        "(min-hpo 3, max-hpo 7, noise-terms 4) so Exomiser's baseline fails",
+        "(min-hpo 3, max-hpo 12, noise-terms 2) so Exomiser's baseline fails",
     )
     ap.add_argument("--n", type=int, default=20, help="number of synthetic cases")
     ap.add_argument("--seed", type=int, default=0, help="disease-selection + noise seed")
@@ -321,8 +321,8 @@ def main() -> None:
     corpus_name = args.corpus or ("synthetic_hard" if args.hard else "synthetic")
     rare = args.rare or hard
     min_hpo = args.min_hpo if args.min_hpo is not None else (3 if hard else 4)
-    max_hpo = args.max_hpo if args.max_hpo is not None else (7 if hard else 0)
-    noise = args.noise_terms if args.noise_terms is not None else (4 if hard else 0)
+    max_hpo = args.max_hpo if args.max_hpo is not None else (12 if hard else 0)
+    noise = args.noise_terms if args.noise_terms is not None else (2 if hard else 0)
     cp = config.corpus(corpus_name)
 
     needed = [config.HPOA, config.GENES_TO_DISEASE]
