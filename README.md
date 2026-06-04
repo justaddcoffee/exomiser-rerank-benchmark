@@ -106,5 +106,5 @@ uv run python -m benchmark.score      --corpus synthetic
 
 ## Status
 
-Harness implemented for both corpora. The 20-case `synthetic` corpus is generated and prepared
-(`sanitized_synthetic/` + `ground_truth_synthetic.csv`); the OS run + score is the next step.
+Harness implemented for both corpora. Pilot 1 (10 `store` cases) and pilot 2 (20 `synthetic`
+cases) are both run and scored — see RESULTS.md.
