@@ -34,6 +34,12 @@ def _check_no_leakage(sanitized: dict, case: phenopackets.Case) -> None:
         parts = case.ppkt_id.split("_")
         if len(parts) >= 2 and parts[1].isdigit() and parts[1] in text:
             leaks.append(f"PMID='{parts[1]}'")
+    # Synthetic cases carry the diagnosis as an OMIM id (no PMID); make sure neither
+    # the id nor its bare number survives so the agent can't shortcut to the disease.
+    if case.omim_disease and (
+        case.omim_disease in text or case.omim_disease.split(":")[-1] in text
+    ):
+        leaks.append(f"omim='{case.omim_disease}'")
     if leaks:
         raise SystemExit(
             f"LEAKAGE in sanitized phenopacket for case '{case.case_id}': "
@@ -43,30 +49,50 @@ def _check_no_leakage(sanitized: dict, case: phenopackets.Case) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--n", type=int, default=10, help="number of cases (pilot=10)")
+    ap.add_argument(
+        "--corpus",
+        choices=sorted(config.CORPORA),
+        default="store",
+        help="which corpus to prepare (store=Phenopacket Store, synthetic=HPOA-sampled)",
+    )
+    ap.add_argument(
+        "--n",
+        type=int,
+        default=0,
+        help="number of cases (0 = all eligible; pilot used 10)",
+    )
     ap.add_argument(
         "--min-hpo", type=int, default=4, help="minimum non-excluded HPO terms"
     )
     ap.add_argument("--seed", type=int, default=0, help="sampling seed (reproducible)")
     args = ap.parse_args()
 
-    if not config.PPKTS.exists():
-        raise SystemExit(
-            f"{config.PPKTS} not found — download the Phenopacket Store bundle first."
+    cp = config.corpus(args.corpus)
+    if not cp.ppkts.exists():
+        hint = (
+            "download the Phenopacket Store bundle first (./download.sh)"
+            if cp is config.STORE
+            else "generate it first (python -m benchmark.synthesize)"
         )
+        raise SystemExit(f"{cp.ppkts} not found — {hint}.")
 
-    cases = phenopackets.load_cases(min_hpo=args.min_hpo)
+    cases = phenopackets.load_cases(
+        min_hpo=args.min_hpo, ppkts_dir=cp.ppkts, flat=cp.flat
+    )
     if not cases:
         raise SystemExit("no eligible cases found")
-    random.Random(args.seed).shuffle(cases)
-    chosen = cases[: args.n]
+    if args.n:
+        random.Random(args.seed).shuffle(cases)
+        chosen = cases[: args.n]
+    else:
+        chosen = cases
 
-    config.SANITIZED.mkdir(parents=True, exist_ok=True)
+    cp.sanitized.mkdir(parents=True, exist_ok=True)
     rows = []
     for c in chosen:
         sanitized = phenopackets.sanitize(c.path)
         _check_no_leakage(sanitized, c)
-        (config.SANITIZED / f"{c.case_id}.json").write_text(
+        (cp.sanitized / f"{c.case_id}.json").write_text(
             json.dumps(sanitized, indent=2)
         )
         rows.append(
@@ -80,14 +106,14 @@ def main() -> None:
             }
         )
 
-    with config.GROUND_TRUTH.open("w", newline="") as fh:
+    with cp.ground_truth.open("w", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
     print(
-        f"prepared {len(rows)} cases (of {len(cases)} eligible) "
-        f"-> {config.SANITIZED}/ + {config.GROUND_TRUTH.name}"
+        f"[{cp.name}] prepared {len(rows)} cases (of {len(cases)} eligible) "
+        f"-> {cp.sanitized}/ + {cp.ground_truth.name}"
     )
 
 

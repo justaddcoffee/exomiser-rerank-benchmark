@@ -33,9 +33,9 @@ Attached is a patient phenopacket containing HPO phenotype terms (no diagnosis).
 """
 
 
-def _collect(job_id: str, case_id: str) -> dict:
-    """Copy the baseline + rerank rankings from the OS job dir into results/<case_id>/."""
-    out = config.RESULTS / case_id
+def _collect(job_id: str, case_id: str, cp: config.Corpus) -> dict:
+    """Copy the baseline + rerank rankings from the OS job dir into <results>/<case_id>/."""
+    out = cp.results / case_id
     out.mkdir(parents=True, exist_ok=True)
     found: dict[str, bool] = {}
     if config.OS_JOBS_DIR is None:
@@ -59,28 +59,36 @@ def _collect(job_id: str, case_id: str) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--corpus",
+        choices=sorted(config.CORPORA),
+        default="store",
+        help="which prepared corpus to submit",
+    )
     ap.add_argument("--max-iterations", type=int, default=2)
     args = ap.parse_args()
 
-    if not config.GROUND_TRUTH.exists():
+    cp = config.corpus(args.corpus)
+    if not cp.ground_truth.exists():
         raise SystemExit(
-            "ground_truth.csv not found — run `python -m benchmark.prepare` first."
+            f"{cp.ground_truth.name} not found — run "
+            f"`python -m benchmark.prepare --corpus {cp.name}` first."
         )
-    cases = list(csv.DictReader(config.GROUND_TRUTH.open()))
+    cases = list(csv.DictReader(cp.ground_truth.open()))
     http = osclient.client()
 
     for i, c in enumerate(cases, 1):
         cid = c["case_id"]
-        ppkt = config.SANITIZED / f"{cid}.json"
+        ppkt = cp.sanitized / f"{cid}.json"
         job_id = osclient.create_job(
             http,
             research_question=PROMPT,
             phenopacket_path=ppkt,
             max_iterations=args.max_iterations,
         )
-        print(f"[{i}/{len(cases)}] {cid}: submitted job {job_id}", flush=True)
+        print(f"[{cp.name} {i}/{len(cases)}] {cid}: submitted job {job_id}", flush=True)
         status = osclient.wait_for(http, job_id)
-        found = _collect(job_id, cid)
+        found = _collect(job_id, cid, cp)
         print(f"            -> {status}; collected {sorted(found)}", flush=True)
 
 

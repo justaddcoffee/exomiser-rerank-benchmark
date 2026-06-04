@@ -12,6 +12,9 @@ dependencies = [
 
 [dependency-groups]
 dev = ["ruff>=0.6"]
+synth = [
+    "phenotype2phenopacket>=0.6.18",
+]
 
 # Run-as-`python -m benchmark.X` script project: manage the venv/deps, don't build a wheel.
 [tool.uv]

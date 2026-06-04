@@ -49,8 +49,78 @@ Output:
 - `results/<case_id>/{exomiser_ranking.json,reranked.json,meta.json}` — per-case artifacts collected from the OS job dir.
 - `results/scores.csv` — per-case true-gene ranks in baseline vs reranked.
 
+# Pilot 2 — 20 synthetic cases (2026-06)
+
+The big asterisk on pilot 1 was caveat #3: with real case-report phenopackets, the agent's
+`search_pubmed` could retrieve *the very paper the curator annotated from* and recover the gene
+without reasoning from phenotype to gene. Pilot 2 removes that shortcut at the root.
+
+## Setup
+
+20 synthetic patients generated with [`phenotype2phenopacket`](https://github.com/monarch-initiative/phenotype2phenopacket)
+(the pheval ecosystem; `benchmark/synthesize.py`). Each patient's HPO profile is a
+frequency-weighted draw from the **HPOA aggregate** annotations for an OMIM disease — **no single
+publication underlies the profile**, so the source-paper shortcut is gone. The causal gene is
+attached from HPO's `genes_to_disease`. Disease selection matches the pilot tier (same
+Phenopacket-Store single-gene disease universe); the 10 pilot-1 diseases are always included, so
+10 of the 20 cases are a direct A/B against pilot 1. Sanitization is unchanged, and `prepare.py`
+now also refuses any sanitized file in which the OMIM id survives. Same prompt, same 2 LLM
+iterations, same local emulated Exomiser (phenotype-only, data `2512_phenotype`). One job hit the
+per-job poll timeout but still returned both rankings; 0 failures.
+
+## Result
+
+| k  | Exomiser baseline (phenotype-only) | OS-reranked | McNemar p |
+|----|---|---|---|
+| 1  | 15/20 (75 %) | **20/20 (100 %)** | 0.062 |
+| 3  | 17/20 (85 %) | 20/20 (100 %)     | 0.250 |
+| 5  | 17/20 (85 %) | 20/20 (100 %)     | 0.250 |
+| 10 | 19/20 (95 %) | 20/20 (100 %)     | 1.000 |
+
+MRR: baseline **0.81** → reranked **1.00**. Reranking moved the true gene up in 5/20 cases, down
+in 0. The five with headroom — the only baseline misses — were all recovered: GNAS 11→1,
+ITPR3 10→1, STK33 10→1, TUBA4A 3→1, IRF4 2→1.
+
+**Headline: the reranking gain survives removal of the source-paper shortcut.** With no paper to
+retrieve, OS still reaches 100 % hits@1 (20/20). On the 10 shared diseases, reranked rank = 1 in
+*both* pilots; e.g. CAPN1 (P1 5→1 / P2 1→1), FBXL4 (16→1 / 1→1), SETD2 (25→1 / 1→1), STK33
+(2→1 / 10→1).
+
+## The caveat, now inverted
+
+The thing that changed between pilots is the **baseline**, not the rerank. On the 10 shared
+diseases, baseline hits@1 jumped **3/10 → 8/10**; overall pilot-2 baseline is 75 % @1 vs pilot-1's
+30 %. Synthetic HPOA-aggregate profiles are more *prototypical* than messy real case reports, so
+Exomiser's phenotype-only match is much stronger and there is little headroom left. That — not a
+weaker reranker — is why the McNemar p-values aren't significant here: only 5 cases could move,
+and all 5 did, with 0 harm. (STK33 actually got *harder* synthetically, baseline 2→10, and
+reranking still recovered it.)
+
+So pilot 2 cleanly retires the leakage worry, and shifts the open question: to stress-test
+reranking you now need cases where the baseline genuinely **fails** — rarer/recently-described
+diseases, or noisier/sparser profiles (lower `--min-hpo`, more added noise).
+
+## Reproducing
+
+```bash
+./download.sh                                          # + HPOA / genes_to_disease / hp.obo
+uv sync --group synth                                  # phenotype2phenopacket
+uv run python -m benchmark.synthesize --n 20 --seed 0  # disease list is deterministic;
+                                                       # per-patient HPO sampling is stochastic
+uv run python -m benchmark.prepare --corpus synthetic  # sanitized_synthetic/ + ground_truth_synthetic.csv
+uv run python -m benchmark.run     --corpus synthetic
+uv run python -m benchmark.score   --corpus synthetic  # -> results_synthetic/scores.csv
+```
+
 ## What's next
 
+- **Pilot 3 — `synthetic_hard` (prepared):** 20 rare/recently-described (OMIM ≥ 620000),
+  sparsely-annotated single-gene diseases, with sparse profiles (median 8 HPO terms) and 2
+  injected off-target distractor terms each (`benchmark.synthesize --hard`). Built so Exomiser's
+  phenotype-only baseline fails — each case keeps only ~3–4 exactly-disease-matching terms amid
+  related-but-imprecise and distractor terms — giving reranking real headroom and the McNemar
+  test power, while leaving enough true signal to stay solvable. Generated + prepared
+  (`ground_truth_synthetic_hard.csv`); OS run + score is the remaining step.
 - **~100-case run** with source-PMID retrieval blocked, balanced across difficulty tiers.
 - Per-case **headroom check** — for the cases where the baseline already nails it, does reranking ever *hurt*? (Pilot says no — 0/10 went down — but n is small.)
 - **Evidence quality** as a separate axis: even when reranking lands the right gene, is the cited evidence load-bearing for the decision, or does the rationale stand without it? Hook for [openscientist-io/openscientist#191](https://github.com/openscientist-io/openscientist/pull/191) (the citation-validation work).
