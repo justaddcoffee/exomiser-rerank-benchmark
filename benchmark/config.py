@@ -56,7 +56,18 @@ SYNTHETIC = Corpus(
     REPO / "results_synthetic",
     flat=True,
 )
-CORPORA = {c.name: c for c in (STORE, SYNTHETIC)}
+# Like `synthetic`, but deliberately hard: rare/recent sparsely-annotated diseases,
+# sparse profiles, and injected distractor HPO terms -- built so Exomiser's
+# phenotype-only baseline actually fails, giving reranking measurable headroom.
+SYNTHETIC_HARD = Corpus(
+    "synthetic_hard",
+    DATA / "ppkts_synthetic_hard",
+    REPO / "sanitized_synthetic_hard",
+    REPO / "ground_truth_synthetic_hard.csv",
+    REPO / "results_synthetic_hard",
+    flat=True,
+)
+CORPORA = {c.name: c for c in (STORE, SYNTHETIC, SYNTHETIC_HARD)}
 
 
 def corpus(name: str) -> Corpus:

@@ -114,6 +114,12 @@ uv run python -m benchmark.score   --corpus synthetic  # -> results_synthetic/sc
 
 ## What's next
 
+- **Pilot 3 — `synthetic_hard` (prepared):** 20 rare/recently-described (OMIM ≥ 620000),
+  sparsely-annotated single-gene diseases, with sparse profiles and ~4 injected off-target
+  distractor HPO terms each (`benchmark.synthesize --hard`). Built so Exomiser's phenotype-only
+  baseline fails — each case keeps only ~2–3 exactly-disease-matching terms amid distractors —
+  giving reranking real headroom and the McNemar test power. Generated + prepared
+  (`ground_truth_synthetic_hard.csv`); OS run + score is the remaining step.
 - **~100-case run** with source-PMID retrieval blocked, balanced across difficulty tiers.
 - Per-case **headroom check** — for the cases where the baseline already nails it, does reranking ever *hurt*? (Pilot says no — 0/10 went down — but n is small.)
 - **Evidence quality** as a separate axis: even when reranking lands the right gene, is the cited evidence load-bearing for the decision, or does the rationale stand without it? Hook for [openscientist-io/openscientist#191](https://github.com/openscientist-io/openscientist/pull/191) (the citation-validation work).

@@ -17,10 +17,14 @@ __pycache__/
 data/
 sanitized/
 sanitized_synthetic/
+sanitized_synthetic_hard/
 results/
 results_synthetic/
+results_synthetic_hard/
 ground_truth.csv
 ground_truth_synthetic.csv
+ground_truth_synthetic_hard.csv
+logs/
 *.parquet
 *.jsonl
 

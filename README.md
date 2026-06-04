@@ -38,6 +38,12 @@ Two **corpora**, selected throughout the harness with `--corpus` (default `store
   gone. Disease selection matches the pilot tier — same Phenopacket-Store single-gene disease
   universe, with the 10 pilot diseases always included for a direct A/B; see
   `benchmark/synthesize.py`.
+- **`synthetic_hard`** (pilot 3): same generator, but built so Exomiser's phenotype-only
+  baseline actually **fails** (pilot 2 showed the synthetic baseline near-ceiling, leaving no
+  headroom). Rare/recently-described, sparsely-annotated single-gene diseases; sparse profiles;
+  and injected off-target distractor HPO terms (drawn from the HPOA universe minus the
+  disease's own terms) that mislead Exomiser's phenotype match while keeping the true signal.
+  `benchmark.synthesize --hard`.
 
 Two non-obvious requirements the harness enforces:
 
@@ -100,6 +106,12 @@ uv run python -m benchmark.synthesize --n 20 --seed 0      # → data/ppkts_synt
 uv run python -m benchmark.prepare    --corpus synthetic   # → sanitized_synthetic/ + ground_truth_synthetic.csv
 uv run python -m benchmark.run        --corpus synthetic
 uv run python -m benchmark.score      --corpus synthetic
+
+# pilot 3 — hard cases (rare/recent + sparse + noisy; built to make the baseline fail)
+uv run python -m benchmark.synthesize --hard --n 20 --seed 0          # → data/ppkts_synthetic_hard/
+uv run python -m benchmark.prepare    --corpus synthetic_hard --min-hpo 3
+uv run python -m benchmark.run        --corpus synthetic_hard
+uv run python -m benchmark.score      --corpus synthetic_hard
 ```
 
 `OS_API_KEY` and `.env` are gitignored — never commit them.
